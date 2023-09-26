@@ -6,6 +6,7 @@ The implementation of Ord2Seq: Regarding Ordinal Regression as Label Sequence Pr
 ## Environment
 
 python 3.8.13
+
 pytorch 1.12.1
 
 ## Citation
