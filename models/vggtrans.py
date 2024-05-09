@@ -1,35 +1,84 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-import timm
 from torchvision.models.vgg import vgg16_bn
-from models.cal import cal
-from models import pvt
+import torch.nn.functional as F
+import numpy as np
+# from models import soft_target_and_lossfunc
+from models.mixup import mix, cal
+import os
+
+'''
+计算loss的部分改为CELoss
+label1和label2改为01
+
+现在是这样的：
+mask1为11100-00011
+mask2为11000-00100-00010-00001
+loss是BCELoss
+'''
+
+
+
+def _get_activation_fn(activation):
+    if activation is None:
+        return nn.Identity()
+    if activation == "relu":
+        return nn.ReLU()
+    elif activation == "gelu":
+        return nn.GELU()
+    raise RuntimeError("activation should be relu/gelu, not {}".format(activation))
+
+
+class multi_layer_feature(nn.Module):
+    def __init__(self, dim):
+        super(multi_layer_feature, self).__init__()
+        backbone = nn.Sequential(*list(vgg16_bn(pretrained=True).children()))
+        self.layer1 = backbone[:6]
+        self.layer2 = backbone[6]
+        self.layer3 = backbone[7]
+        self.fc1 = nn.Linear(512, dim)
+        self.fc2 = nn.Linear(1024, dim)
+        self.fc3 = nn.Linear(2048, dim)
+
+    def forward(self, x):
+        bs = x.size(0)
+        x1 = self.layer1(x)
+        x2 = self.layer2(x1)
+        x3 = self.layer3(x2)
+
+        x1, x2, x3 = self.avgpool(x1), self.avgpool(x2), self.avgpool(x3)
+        x1, x2, x3 = x1.reshape(bs, -1), x2.reshape(bs, -1), x3.reshape(bs, -1)
+
+        x1, x2, x3 = self.fc1(x1), self.fc2(x2), self.fc3(x3)
+
+        out = torch.cat([x1.unsqueeze(1), x2.unsqueeze(1), x3.unsqueeze(1)], dim=1)
+        # shape = bs * 3 * 2048
+        return out
 
 
 class single_feature(nn.Module):
     def __init__(self, dim):
         super(single_feature, self).__init__()
-        self.base = pvt.feature_pvt_v2_b3()
-        ckpt = torch.load('/data2/chengyi/.torch/models/pvt_v2_b3.pth')
-        self.base.load_state_dict(ckpt)
+        self.backbone = nn.Sequential(*list(vgg16_bn(pretrained=True).children()))
+        self.feature = self.backbone[0]
+        self.down = nn.Linear(512, dim)
 
     def forward(self, x):
-        x = self.base(x)
-        return x
+        feature = self.feature(x)
+        BS, C, H, W = feature.shape
+        # shape = B * 2048 * 7 * 7
+        feature = feature.reshape(BS, C, H * W).permute((2, 0, 1))
+        feature = self.down(feature)
+        return feature
 
-def mae_loss(a, b):
-    return abs(a-b).mean()
 
-def mse_loss(a, b):
-    return ((a-b) ** 2).mean()
 class Model(nn.Module):
     def __init__(self, args):
         super(Model, self).__init__()
-        self.name = 'vggtrans'
+        self.name = 'ResTrans5'
         dim = 512
         self.cls = args.num_classes
-        self.need_mask_in_training = True
+        self.need_mask_in_training = False
         self.feature = single_feature(dim=dim)
         self.nhead = 8
         self.transformer = nn.Transformer()
@@ -46,15 +95,8 @@ class Model(nn.Module):
         self.fc3 = nn.Linear(dim, self.cls)
         self.fc = [self.fc1, self.fc2, self.fc3]
         self.acti = nn.Identity()
-        self.alpha = args.alpha
+
         self.weight = [1., 1., 1.]
-        print(self.alpha)
-        if args.loss_name == 'mae':
-            self.lossfn = mae_loss
-        elif args.loss_name == 'mse':
-            self.lossfn = mse_loss
-        else:
-            self.lossfn = nn.BCEWithLogitsLoss()
 
     def model_name(self):
         return self.name
@@ -163,8 +205,6 @@ class Model(nn.Module):
         else:
             print('我没写')
             raise ValueError
-        if self.training:
-            mask = mask * (1-self.alpha) + self.alpha
         return mask.float()
 
     def make_mask_0712_l2(self, out2):
@@ -240,10 +280,6 @@ class Model(nn.Module):
         else:
             print('我没写')
             raise ValueError
-
-        if self.training:
-            mask = mask * (1-self.alpha) + self.alpha
-
         return mask.float()
 
     def forward(self, x, tgt):
@@ -267,19 +303,19 @@ class Model(nn.Module):
             out2 = self.fc[1](self.acti(out2)).squeeze(0)
             out3 = self.fc[2](self.acti(out3)).squeeze(0)
 
-            loss1 = self.lossfn(out1, label_1)
+            loss1 = nn.BCEWithLogitsLoss()(out1, label_1)
 
             if self.need_mask_in_training:
                 mask1 = self.make_mask_0712_l1(out1)
                 out2 = mask1 * out2
 
-            loss2 = self.lossfn(out2, label_2)
+            loss2 = nn.BCEWithLogitsLoss()(out2, label_2)
 
             if self.need_mask_in_training:
                 mask2 = self.make_mask_0712_l2(out2)
                 out3 = mask2 * out3
 
-            loss3 = self.lossfn(out3, label_3)
+            loss3 = nn.BCEWithLogitsLoss()(out3, label_3)
 
             loss = loss1 + loss2 + loss3
 
@@ -305,13 +341,12 @@ class Model(nn.Module):
                 projected = projected[-1]
                 if i == 0:
                     mask = self.make_mask_0712_l1(projected)
-                    loss1 = self.lossfn(projected, label_1)
+                    loss1 = nn.BCEWithLogitsLoss()(projected, label_1)
                     out1 = projected
                 if i == 1:
-                    # TODO:这里去掉了mask 1017，之后记得改回来
                     projected = mask * projected
                     mask = self.make_mask_0712_l2(projected)
-                    loss2 = self.lossfn(projected, label_2)
+                    loss2 = nn.BCEWithLogitsLoss()(projected, label_2)
                     out2 = projected
                 if i == 2:
                     # projected = mask * projected
@@ -320,14 +355,15 @@ class Model(nn.Module):
                     # 对于最后一层输出加入mask会导致MAE很高 0718：
                     # -->
                     # projected = projected
-                    loss3 = self.lossfn(projected, label_3)
+                    loss3 = nn.BCEWithLogitsLoss()(projected, label_3)
                     out3 = projected
 
-                # TODO:这里去掉了mask 1017，之后记得改回来
+                # TODO: 这里也改了
                 if i in [0, 1]:
                     prob = mask.max(dim=-1, keepdim=False)[1]
                 else:
                     prob = projected.max(dim=-1, keepdim=False)[1]
+                # prob = projected.max(dim=-1, keepdim=False)[1]
 
                 next_word = prob.data[-1].unsqueeze(dim=-1) if len(prob.shape) > 1 else prob.unsqueeze(
                     dim=-1).data
@@ -343,21 +379,55 @@ class Model(nn.Module):
 class arg_test():
     def __init__(self):
         self.num_classes = 8
-        self.alpha = 0.
+        self.optim = 'Adam'
 
 if __name__ == '__main__':
     args = arg_test()
-
-    src = torch.rand(8, 3, 224, 224).cuda()
-    tgt = torch.Tensor([0, 1, 2, 3, 4, 5, 6, 7]).cuda()
+    # backbone = nn.Sequential(*list(vgg16_bn(pretrained=True).children()))
+    # seq = torch.rand(32, 3, 3)
+    # mask = get_attn_subsequence_mask(seq)
+    # print(mask)
+    os.environ['CUDA_VISIBLE_DEVICES'] = '4'
     model = Model(args).cuda()
-    out = model(src, tgt)
-    model.eval()
-    out = model(src, tgt)
-    print(out)
-    #
-    # base = pvt.feature_pvt_v2_b3()
-    # ckpt = torch.load('/data2/chengyi/.torch/models/pvt_v2_b3.pth')
-    # a = torch.rand(8, 3, 224, 224)
-    # print(base(a).shape)
 
+    total = sum([param.nelement() for param in model.parameters()])
+
+    print("Number of parameter: %.2fM" % (total / 1e6))
+
+
+    import time
+
+    # ============= 模拟inference =============
+    # src = torch.rand(1, 3, 224, 224).cuda()
+    # tgt = torch.Tensor([0]).cuda()
+    # model.eval()
+    # T1 = time.time()
+    # for i in range(100):
+    #     out = model(src, tgt)
+    # T2 = time.time()
+    # print('程序运行时间:%s毫秒' % ((T2 - T1)*1000))
+    # ============= 模拟训练 =============
+    src = torch.rand(32, 3, 224, 224).cuda()
+    tgt = torch.Tensor([0 for _ in range(32)]).cuda()
+    optim = getattr(torch.optim, args.optim) \
+                    (filter(lambda p: p.requires_grad, model.parameters()), lr=0.001, weight_decay=0.0001)
+    model.train()
+    T1 = time.time()
+    for i in range(10):
+        _, loss = model(src, tgt)
+        loss.backward()
+        optim.step()
+        model.zero_grad()
+    T2 = time.time()
+    print('程序运行时间:%s毫秒' % ((T2 - T1)*1000))
+
+
+
+    #
+    # src = torch.rand(8, 3, 224, 224).cuda()
+    # tgt = torch.Tensor([0, 1, 2, 3, 4, 5, 6, 7]).cuda()
+    #
+    # out = model(src, tgt)
+    # model.eval()
+    # out = model(src, tgt)
+    # print(out)
