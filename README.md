@@ -12,7 +12,7 @@ The implementation of Ord2Seq: Regarding Ordinal Regression as Label Sequence Pr
 ## Citation
 ```
 @article{wang2023ord2seq,
-  title={Ord2Seq: Regard Ordinal Regression as Label Sequence Prediction},
+  title={Ord2Seq: Regarding Ordinal Regression as Label Sequence Prediction},
   author={Wang, Jinhong and Cheng, Yi and Chen, Jintai and Chen, Tingting and Chen, Danny and Wu, Jian},
   booktitle={Proceedings of the IEEE/CVF International Conference on Computer Vision},
   page={},
