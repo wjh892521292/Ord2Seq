@@ -10,7 +10,7 @@ Jinhong Wang, Yi Cheng, Jintai Chen, TingTing Chen, Danny Chen, and Jian Wu
 
 Ordinal regression assigns inputs to ordered categories, such as age groups or disease severity grades. Adjacent categories can be difficult to distinguish because their visual features often overlap.
 
-Ord2Seq represents each ordinal label as a sequence of decisions inspired by binary search. On a five-level scale, for example, the model can first decide whether the score is above 3 and then refine its prediction within the remaining range. A Transformer decoder predicts the sequence from image features, while a masking strategy reduces the influence of categories ruled out at earlier steps. The paper evaluates the framework with VGG and Pyramid Vision Transformer (PVT) backbones.
+Ord2Seq represents each ordinal label as a sequence of decisions inspired by binary search. On a five-level scale, for example, the model can first decide whether the score is above 3 and then refine its prediction within the remaining range. A Transformer decoder predicts the sequence from image features, while a masking strategy reduces the influence of categories ruled out at earlier steps. The paper evaluates the framework with VGG and [Pyramid Vision Transformer (PVT)](https://github.com/whai362/PVT) backbones.
 
 ## Paper results
 
