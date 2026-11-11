@@ -49,10 +49,8 @@ Obtain the images and annotations for your dataset. Use the annotation format an
 
 The experiment block in `main.py` is configured for UTK with eight ordered classes. Before running it, edit the argument list in `main.py` to set `--img_root` and `--data_root` to your local paths. For another dataset, update `--data_name`, `--fold`, and `--num_classes` to match its loader and split.
 
-Set `ORD2SEQ_MODEL` to a model name exported by `models/__init__.py`, then run the entry point from the repository root. Replace `YOUR_MODEL_NAME` with the selected export.
-
 ```bash
-ORD2SEQ_MODEL=YOUR_MODEL_NAME python main.py
+python main.py
 ```
 
 If model imports fail, check that the module names and capitalization in `models/__init__.py` match the files available in your checkout. [Model exports](models/__init__.py)
