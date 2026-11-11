@@ -1,6 +1,6 @@
 # Ord2Seq: Regarding Ordinal Regression as Label Sequence Prediction
 
-PyTorch research implementation of **Ord2Seq**, presented at ICCV 2023.
+PyTorch implementation of **Ord2Seq**, presented at ICCV 2023.
 
 Jinhong Wang, Yi Cheng, Jintai Chen, TingTing Chen, Danny Chen, and Jian Wu
 
@@ -10,11 +10,11 @@ Jinhong Wang, Yi Cheng, Jintai Chen, TingTing Chen, Danny Chen, and Jian Wu
 
 Ordinal regression assigns inputs to ordered categories, such as age groups or disease severity grades. Adjacent categories can be difficult to distinguish because their visual features often overlap.
 
-Ord2Seq encodes each ordinal label as a sequence of decisions inspired by binary search. For example, on a five-level scale, the model can first decide whether a score is above 3 and then refine its prediction within the remaining range. A Transformer decoder predicts the label sequence from image features. At each step, a masking strategy suppresses the contribution of categories ruled out by earlier decisions. The paper evaluates the framework with VGG and Pyramid Vision Transformer (PVT) backbones.
+Ord2Seq represents each ordinal label as a sequence of decisions inspired by binary search. On a five-level scale, for example, the model can first decide whether the score is above 3 and then refine its prediction within the remaining range. A Transformer decoder predicts the sequence from image features, while a masking strategy reduces the influence of categories ruled out at earlier steps. The paper evaluates the framework with VGG and Pyramid Vision Transformer (PVT) backbones.
 
 ## Paper results
 
-The paper evaluates Ord2Seq on age-group estimation, image aesthetics assessment, historical image dating, and diabetic retinopathy grading. Selected results below are from the paper. See Tables 2, 4, and 6 for the comparison protocols and baselines, and Table 5 for historical image dating. [ICCV paper](https://openaccess.thecvf.com/content/ICCV2023/papers/Wang_Ord2Seq_Regarding_Ordinal_Regression_as_Label_Sequence_Prediction_ICCV_2023_paper.pdf)
+The paper evaluates Ord2Seq on age-group estimation, image aesthetics assessment, historical image dating, and diabetic retinopathy grading. The table shows selected results reported in the paper. See Tables 2, 4, and 6 for the corresponding comparisons and Table 5 for historical image dating. [ICCV paper](https://openaccess.thecvf.com/content/ICCV2023/papers/Wang_Ord2Seq_Regarding_Ordinal_Regression_as_Label_Sequence_Prediction_ICCV_2023_paper.pdf)
 
 | Dataset | Backbone | Accuracy ↑ | MAE ↓ |
 | --- | --- | ---: | ---: |
@@ -25,60 +25,48 @@ The paper evaluates Ord2Seq on age-group estimation, image aesthetics assessment
 | Diabetic Retinopathy | VGG | 84.0 ± 0.6% | 0.25 ± 0.07 |
 | Diabetic Retinopathy | PVT | 84.2 ± 0.5% | 0.25 ± 0.07 |
 
-## Repository layout
-
-| Path | Purpose |
-| --- | --- |
-| [`main.py`](main.py) | Builds the training and validation loaders and starts the trainer |
-| [`config/cfg.py`](config/cfg.py) | Defines experiment arguments and default settings |
-| [`models/`](models/) | Contains backbone and sequence prediction code |
-| [`training/trainer.py`](training/trainer.py) | Implements training, validation, logging, and checkpoint handling |
-| [`evaluater/`](evaluater/) | Contains evaluation utilities |
-| [`utils/`](utils/) | Contains supporting utilities |
-
 ## Environment
 
-The original environment used **Python 3.8.13** and **PyTorch 1.12.1**. The trainer moves the model and batches to CUDA, so use a CUDA-capable GPU and install a CUDA build of PyTorch with the matching torchvision release (`0.13.1`). The entry point and trainer also import NumPy, OpenCV, scikit-learn, and TensorBoardX. [PyTorch installation instructions](https://pytorch.org/get-started/previous-versions/#v1121)
+The original environment used **Python 3.8.13** and **PyTorch 1.12.1**. Training requires an NVIDIA GPU with CUDA support. The example below installs the CUDA 11.3 build of PyTorch and the matching torchvision version.
 
 ```bash
 git clone https://github.com/wjh892521292/Ord2Seq.git
 cd Ord2Seq
 
-# Install PyTorch 1.12.1 and torchvision 0.13.1 for your CUDA setup first.
+conda create -n ord2seq python=3.8.13 pip -y
+conda activate ord2seq
+
+conda install -y -c pytorch pytorch=1.12.1 torchvision=0.13.1 cudatoolkit=11.3
+
 python -m pip install numpy opencv-python scikit-learn tensorboardX
 ```
 
-## Prepare data and configure an experiment
+Verify the Python and PyTorch versions and check that PyTorch can access the GPU.
 
-Obtain the images and annotations for the dataset you want to use. Match the split and label definitions in the paper if you are comparing against its results. Inspect the corresponding dataset loader for the annotation format, file names, and directory layout. The entry point looks up the loader by `data_name` and requests the `train` and `valid` splits. [Training entry point](main.py)
+```bash
+python --version
+python -c "import torch; print(torch.__version__); print('CUDA available:', torch.cuda.is_available())"
+```
 
-| Argument | What to set |
-| --- | --- |
-| `--data_name` | Name of the loader exposed by `utils.data_load` |
-| `--img_root` | Local path to the images |
-| `--data_root` | Local annotation or split path expected by the loader |
-| `--fold` | Split index used by the loader |
-| `--num_classes` | Number of ordered categories |
-| `--model_name` | Model name exposed by `models` |
-| `--gpu_id` | CUDA device index |
-| `--save_folder` | Local checkpoint directory |
-| `--save_log` | Local log directory |
+For other CUDA builds, see the [PyTorch 1.12.1 installation instructions](https://pytorch.org/get-started/previous-versions/#v1121).
+
+## Data preparation
+
+Obtain the images and annotations for your dataset. Use the annotation format and directory layout expected by the corresponding loader in `utils.data_load`. The training entry point selects the loader using `--data_name` and requests the `train` and `valid` splits. When comparing against paper results, follow the split and label definitions in the paper for that dataset. [Training entry point](main.py) · [ICCV paper](https://openaccess.thecvf.com/content/ICCV2023/papers/Wang_Ord2Seq_Regarding_Ordinal_Regression_as_Label_Sequence_Prediction_ICCV_2023_paper.pdf)
 
 ## Training and validation
 
-The public snapshot contains experiment-specific settings that need to be adapted before running it:
+The experiment block in `main.py` is configured for UTK with eight ordered classes. Before running it, edit the argument list in `main.py` to set `--img_root` and `--data_root` to your local paths. For another dataset, update `--data_name`, `--fold`, and `--num_classes` to match its loader and split.
 
-1. **Check the model imports.** [`models/__init__.py`](models/__init__.py) references modules such as `VggTrans` and `pvt_trans`, while the repository lists files named `vggtrans.py` and `pvttrans.py`. Check the import paths and exported classes for the model you intend to use. The active `vgg0528_new` preset in `main.py` also needs a corresponding export in `models`.
-2. **Check the dataset loader.** Verify that the loader for your selected dataset is available through `utils.data_load` and accepts `img_root`, `data_root`, `dataset`, `transform`, and `fold`.
-3. **Set local paths and experiment options.** The active `main.py` preset targets UTK with eight classes and passes a fixed argument list to `BaseConfig.initialize`. Edit that preset and supply local values for both data paths and both output paths. To configure the experiment from the command line, replace `cfg.initialize(fixed)` in the active entry point with `cfg.initialize()` and pass your settings explicitly.
-
-Once the imports, loader, and local paths are in place, start the configured experiment from the repository root:
+Set `ORD2SEQ_MODEL` to a model name exported by `models/__init__.py`, then run the entry point from the repository root. Replace `YOUR_MODEL_NAME` with the selected export.
 
 ```bash
-python main.py
+ORD2SEQ_MODEL=YOUR_MODEL_NAME python main.py
 ```
 
-The training loop runs validation using the selected `valid` split and writes checkpoints and TensorBoard logs to the configured directories. For checkpoint-based evaluation, consult `DefaultTrainer.load_model()` and `DefaultTrainer.validation()`. The call that loads `--resume` during trainer initialization is commented out in the public snapshot. [Trainer source](training/trainer.py)
+If model imports fail, check that the module names and capitalization in `models/__init__.py` match the files available in your checkout. [Model exports](models/__init__.py)
+
+The trainer runs validation on the `valid` split during training. The experiment block configures checkpoint and log directories under `outputs/checkpoints/` and `outputs/logs/`. For checkpoint-based evaluation, see `DefaultTrainer.load_model()` and `DefaultTrainer.validation()`. The checkpoint-loading call for `--resume` is commented out in the trainer. [Trainer source](training/trainer.py)
 
 ## Citation
 
