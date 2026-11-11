@@ -41,15 +41,6 @@ conda install -y -c pytorch pytorch=1.12.1 torchvision=0.13.1 cudatoolkit=11.3
 python -m pip install numpy opencv-python scikit-learn tensorboardX
 ```
 
-Verify the Python and PyTorch versions and check that PyTorch can access the GPU.
-
-```bash
-python --version
-python -c "import torch; print(torch.__version__); print('CUDA available:', torch.cuda.is_available())"
-```
-
-For other CUDA builds, see the [PyTorch 1.12.1 installation instructions](https://pytorch.org/get-started/previous-versions/#v1121).
-
 ## Data preparation
 
 Obtain the images and annotations for your dataset. Use the annotation format and directory layout expected by the corresponding loader in `utils.data_load`. The training entry point selects the loader using `--data_name` and requests the `train` and `valid` splits. When comparing against paper results, follow the split and label definitions in the paper for that dataset. [Training entry point](main.py) · [ICCV paper](https://openaccess.thecvf.com/content/ICCV2023/papers/Wang_Ord2Seq_Regarding_Ordinal_Regression_as_Label_Sequence_Prediction_ICCV_2023_paper.pdf)
